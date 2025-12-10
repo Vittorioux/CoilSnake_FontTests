@@ -46,8 +46,9 @@ class AsmPointerReference(object):
              [\x85\x86\x84](.) # Match STA_d / STX_d / STY_d
         ''', re.VERBOSE | re.DOTALL)
 
-    def __init__(self, offset):
+    def __init__(self, offset, pointer_offset=0):
         self.offset = offset
+        self.pointer_offset = pointer_offset  # An additional offset when writing the pointer (address).
 
     def validate_structure(self, rom):
         region = bytes(rom.to_array()[self.offset:self.offset+10])
@@ -66,12 +67,12 @@ class AsmPointerReference(object):
 
     def write(self, rom, address):
         log.info("Writing pointer at " + hex(self.offset))
-        write_asm_pointer(rom, self.offset, address)
+        write_asm_pointer(rom, self.offset, address + self.pointer_offset)
 
 class XlPointerReference(object):
-    def __init__(self, offset, plus_addr=0):
+    def __init__(self, offset, pointer_offset=0):
         self.offset = offset
-        self.plus_addr = plus_addr
+        self.pointer_offset = pointer_offset  # An additional offset when writing the pointer (address).
 
     def validate_structure(self, rom):
         opcode = rom[self.offset]
@@ -80,4 +81,4 @@ class XlPointerReference(object):
 
     def write(self, rom, address):
         log.info("Writing xl pointer at " + hex(self.offset))
-        write_xl_pointer(rom, self.offset, address + self.plus_addr)
+        write_xl_pointer(rom, self.offset, address + self.pointer_offset)
