@@ -16,8 +16,6 @@ FONT_POINTER_TABLE_OFFSET = 0xC3F054
 FONT_POINTER_TABLE_ENTRY_SIZE = 12
 FONT_FILENAMES = ["0", "1", "3", "4", "2"]
 
-MAX_FONT_INDEX = 64
-
 CREDITS_GRAPHICS_ASM_POINTER = 0x4f1a7
 CREDITS_PALETTES_ADDRESS = 0x21e914
 
@@ -126,7 +124,9 @@ class FontModule(EbModule):
                     font.from_files(image_file, widths_file, image_format="png", widths_format="yml")
 
         # Append new fonts
-        for new_font_index in range(5, MAX_FONT_INDEX):
+        new_font_index = 5
+
+        while True:
             font_filename = str(new_font_index)
             try:
                 with resource_open("Fonts/" + font_filename, 'png') as image_file:
@@ -134,9 +134,10 @@ class FontModule(EbModule):
                         new_font = EbFont(num_characters=128, tile_width=16, tile_height=16)
                         new_font.from_files(image_file, widths_file, image_format="png", widths_format="yml")
             except Exception:
-                break
-            
+                break  # Break the loop when there are no more new fonts
+
             self.fonts.append(new_font)
+            new_font_index += 1
 
         self.read_credits_font_from_project(resource_open)
 
