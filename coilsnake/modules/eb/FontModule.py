@@ -7,12 +7,13 @@ from coilsnake.modules.eb.EbModule import EbModule
 from coilsnake.model.eb.table import eb_table_from_offset
 from coilsnake.util.common.image import open_indexed_image
 from coilsnake.util.common.yml import yml_load, yml_dump
-from coilsnake.util.eb.pointer import from_snes_address, to_snes_address
+from coilsnake.util.eb.pointer import from_snes_address, to_snes_address, AsmPointerReference, XlPointerReference
 
 
 log = logging.getLogger(__name__)
 
 FONT_POINTER_TABLE_OFFSET = 0xC3F054
+FONT_POINTER_TABLE_ENTRY_SIZE = 12
 FONT_FILENAMES = ["0", "1", "3", "4", "2"]
 
 CREDITS_GRAPHICS_ASM_POINTER = 0x4f1a7
@@ -25,6 +26,42 @@ class FontModule(EbModule):
         (0x21e528, 0x21e913),  # Credits font graphics
         (0x210c7a, 0x212ef9),  # Fonts 0, 2, 3, and 4
         (0x201359, 0x201fb8),  # Font 1
+    ]
+    FONT_POINTER_TABLE_REFERENCES = [
+        # Pointers to the original offset (and +2).
+        XlPointerReference(0x43E7E),
+        XlPointerReference(0x43E84, 2),
+        AsmPointerReference(0x43E98),
+        XlPointerReference(0x440F8),
+        XlPointerReference(0x440FE, 2),
+        XlPointerReference(0x4420E),
+        XlPointerReference(0x44214, 2),
+        XlPointerReference(0x44284),
+        XlPointerReference(0x4428A, 2),
+        AsmPointerReference(0x4433F),
+        AsmPointerReference(0x44512),
+        AsmPointerReference(0x44761),
+        AsmPointerReference(0x44EF4),
+        AsmPointerReference(0x4502D),
+        AsmPointerReference(0x450EC),
+        AsmPointerReference(0x48292),
+        AsmPointerReference(0x499AE),
+        AsmPointerReference(0x4E593),
+        AsmPointerReference(0x4EDB6),
+        XlPointerReference(0x2F0205),
+        XlPointerReference(0x2F020B, 2),
+        
+        # Font 0.
+        XlPointerReference(0x44363, 4),  # Gfx for font 0.
+        XlPointerReference(0x44369, 6),  # Gfx+2 for font 0.
+        
+        # Font 2.
+        XlPointerReference(0x47D42, FONT_POINTER_TABLE_ENTRY_SIZE*2 + 4),  # Gfx for font 2.
+        XlPointerReference(0x47D48, FONT_POINTER_TABLE_ENTRY_SIZE*2 + 6),  # Gfx+2 for font 2.
+        
+        # Font 3.
+        XlPointerReference(0x44551, FONT_POINTER_TABLE_ENTRY_SIZE*3 + 4),  # Gfx for font 3.
+        XlPointerReference(0x44557, FONT_POINTER_TABLE_ENTRY_SIZE*3 + 6),  # Gfx+2 for font 3.
     ]
 
     def __init__(self):
@@ -59,8 +96,16 @@ class FontModule(EbModule):
             graphics_offset, widths_offset = font.to_block(block=rom)
             self.font_pointer_table[i][0] = to_snes_address(widths_offset)
             self.font_pointer_table[i][1] = to_snes_address(graphics_offset)
+            self.font_pointer_table[i][2] = (font.tileset.tile_height * font.tileset.tile_width) // 8
+            self.font_pointer_table[i][3] = font.tileset.tile_height
+        
+        new_table_offset = rom.allocate(size=len(self.fonts)*12)
+        # Perform table relocation
+        for pointer in self.FONT_POINTER_TABLE_REFERENCES:
+            pointer.write(rom, to_snes_address(new_table_offset))
+            
         self.font_pointer_table.to_block(block=rom,
-                                         offset=from_snes_address(FONT_POINTER_TABLE_OFFSET))
+                                         offset=from_snes_address(new_table_offset))
 
         self.write_credits_font_to_rom(rom)
 

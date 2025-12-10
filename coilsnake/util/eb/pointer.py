@@ -69,8 +69,9 @@ class AsmPointerReference(object):
         write_asm_pointer(rom, self.offset, address)
 
 class XlPointerReference(object):
-    def __init__(self, offset):
+    def __init__(self, offset, plus_addr=0):
         self.offset = offset
+        self.plus_addr = plus_addr
 
     def validate_structure(self, rom):
         opcode = rom[self.offset]
@@ -79,4 +80,4 @@ class XlPointerReference(object):
 
     def write(self, rom, address):
         log.info("Writing xl pointer at " + hex(self.offset))
-        write_xl_pointer(rom, self.offset, address)
+        write_xl_pointer(rom, self.offset, address + self.plus_addr)
