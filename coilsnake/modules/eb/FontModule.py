@@ -2,6 +2,7 @@ import logging
 
 from PIL import Image
 
+from coilsnake.exceptions.common.exceptions import CoilSnakeError
 from coilsnake.model.eb.fonts import EbFont, EbCreditsFont, FONT_IMAGE_PALETTE
 from coilsnake.modules.eb.EbModule import EbModule
 from coilsnake.model.eb.table import eb_table_from_offset
@@ -14,7 +15,6 @@ log = logging.getLogger(__name__)
 
 FONT_POINTER_TABLE_OFFSET = 0xC3F054
 FONT_POINTER_TABLE_ENTRY_SIZE = 12
-FONT_FILENAMES = ["0", "1", "3", "4", "2"]
 
 CREDITS_GRAPHICS_ASM_POINTER = 0x4f1a7
 CREDITS_PALETTES_ADDRESS = 0x21e914
@@ -67,6 +67,7 @@ class FontModule(EbModule):
     def __init__(self):
         super(FontModule, self).__init__()
         self.font_pointer_table = eb_table_from_offset(offset=FONT_POINTER_TABLE_OFFSET)
+        self.font_filenames = ["0", "1", "3", "4", "2"]
         self.fonts = [
             EbFont(num_characters=128, tile_width=16, tile_height=16),
             EbFont(num_characters=128, tile_width=16, tile_height=16),
@@ -80,7 +81,7 @@ class FontModule(EbModule):
         self.font_pointer_table.from_block(block=rom,
                                            offset=from_snes_address(FONT_POINTER_TABLE_OFFSET))
         for i, font in enumerate(self.fonts):
-            log.debug("Reading font #{} from the ROM".format(FONT_FILENAMES[i]))
+            log.debug("Reading font #{} from the ROM".format(self.font_filenames[i]))
             font.from_block(block=rom,
                             tileset_offset=from_snes_address(self.font_pointer_table[i][1]),
                             character_widths_offset=from_snes_address(self.font_pointer_table[i][0]))
@@ -98,12 +99,12 @@ class FontModule(EbModule):
             self.font_pointer_table.values.append([0, 0, 0, 0])  # Initialize values for new fonts
 
         for i, font in enumerate(self.fonts):
-            log.debug("Writing font #{} to the ROM".format(str(i)))
+            log.debug("Writing font #{} to the ROM".format(self.font_filenames[i]))
 
             graphics_offset, widths_offset = font.to_block(block=rom)
             self.font_pointer_table[i][0] = to_snes_address(widths_offset)
             self.font_pointer_table[i][1] = to_snes_address(graphics_offset)
-            self.font_pointer_table[i][2] = (font.tileset.tile_height * font.tileset.tile_width) // 8
+            self.font_pointer_table[i][2] = (font.tileset.tile_height * font.tileset.tile_width) // 8  # BPC
             self.font_pointer_table[i][3] = font.tileset.tile_height
 
         new_table_offset = rom.allocate(size=len(self.fonts)*FONT_POINTER_TABLE_ENTRY_SIZE)
@@ -119,8 +120,8 @@ class FontModule(EbModule):
     def read_from_project(self, resource_open):
         # Default fonts
         for i, font in enumerate(self.fonts):
-            with resource_open("Fonts/" + FONT_FILENAMES[i], 'png') as image_file:
-                with resource_open("Fonts/" + FONT_FILENAMES[i] + "_widths", "yml", True) as widths_file:
+            with resource_open("Fonts/" + self.font_filenames[i], 'png') as image_file:
+                with resource_open("Fonts/" + self.font_filenames[i] + "_widths", "yml", True) as widths_file:
                     font.from_files(image_file, widths_file, image_format="png", widths_format="yml")
 
         # Append new fonts
@@ -128,15 +129,34 @@ class FontModule(EbModule):
 
         while True:
             font_filename = str(new_font_index)
+
+            image_filename = "Fonts/" + font_filename
+            widths_filename = "Fonts/" + font_filename + "_widths"
+
+            try:  # EAFP approach
+                resource_open(image_filename, 'png')
+            except FileNotFoundError:
+                try:
+                    resource_open(widths_filename, "yml", True)
+                    raise CoilSnakeError("Font " + str(new_font_index) + " has a widths file but no image file")
+                except FileNotFoundError:
+                    break  # Break the loop when there are no more new fonts
+
             try:
-                with resource_open("Fonts/" + font_filename, 'png') as image_file:
-                    with resource_open("Fonts/" + font_filename + "_widths", "yml", True) as widths_file:
-                        new_font = EbFont(num_characters=128, tile_width=16, tile_height=16)
-                        new_font.from_files(image_file, widths_file, image_format="png", widths_format="yml")
-            except Exception:
-                break  # Break the loop when there are no more new fonts
+                resource_open(widths_filename, "yml", True)
+            except FileNotFoundError:
+                raise CoilSnakeError("Font " + str(new_font_index) + " has an image file but no widths file")
+
+            with resource_open("Fonts/" + font_filename, 'png') as image_file:
+                with resource_open("Fonts/" + font_filename + "_widths", "yml", True) as widths_file:
+                    pil_image = Image.open(image_file)
+                    image_width, image_height = pil_image.size
+                    
+                    new_font = EbFont(num_characters=128, tile_width=image_width//16, tile_height=image_height//8)
+                    new_font.from_files(image_file, widths_file, image_format="png", widths_format="yml")
 
             self.fonts.append(new_font)
+            self.font_filenames.append(str(new_font_index))
             new_font_index += 1
 
         self.read_credits_font_from_project(resource_open)
@@ -144,8 +164,8 @@ class FontModule(EbModule):
     def write_to_project(self, resource_open):
         for i, font in enumerate(self.fonts):
             # Write the PNG
-            with resource_open("Fonts/" + FONT_FILENAMES[i], 'png') as image_file:
-                with resource_open("Fonts/" + FONT_FILENAMES[i] + "_widths", "yml", True) as widths_file:
+            with resource_open("Fonts/" + self.font_filenames[i], 'png') as image_file:
+                with resource_open("Fonts/" + self.font_filenames[i] + "_widths", "yml", True) as widths_file:
                     font.to_files(image_file, widths_file, image_format="png", widths_format="yml")
 
         self.write_credits_font_to_project(resource_open)
@@ -176,9 +196,9 @@ class FontModule(EbModule):
         elif old_version == 5:
             # Expand all the fonts from 96 characters to 128 characters
             for i, font in enumerate(self.fonts):
-                log.debug("Expanding font #{}".format(FONT_FILENAMES[i]))
-                image_resource_name = "Fonts/" + FONT_FILENAMES[i]
-                widths_resource_name = "Fonts/" + FONT_FILENAMES[i] + "_widths"
+                log.debug("Expanding font #{}".format(self.font_filenames[i]))
+                image_resource_name = "Fonts/" + self.font_filenames[i]
+                widths_resource_name = "Fonts/" + self.font_filenames[i] + "_widths"
                 new_image_w, new_image_h = font.image_size()
 
                 # Expand the image
